@@ -8,10 +8,11 @@ function getIndiaDate() {
     timeZone: "Asia/Kolkata",
     year: "numeric",
     month: "2-digit",
-    day: "2-digit"
+    day: "2-digit",
   }).format(new Date());
 }
 
+// GET all valid upcoming events
 router.get("/", async (req, res) => {
   try {
     const today = getIndiaDate();
@@ -35,18 +36,18 @@ router.get("/", async (req, res) => {
       [today]
     );
 
-    res.json({
+    return res.status(200).json({
       success: true,
       count: events.length,
-      events
+      events,
     });
 
   } catch (error) {
-    console.error("Error fetching events:", error.message);
+    console.error("Error fetching events:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Failed to fetch events."
+      message: "Failed to fetch events.",
     });
   }
 });

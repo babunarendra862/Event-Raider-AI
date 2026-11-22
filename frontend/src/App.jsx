@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import "./App.css";
 import AdminDashboard from "./components/AdminDashboard";
@@ -17,6 +18,7 @@ const CATEGORIES = [
 function getEventLink(event) {
   const isValidUrl = (value) => {
     if (!value || typeof value !== "string") return false;
+
     try {
       const url = new URL(value);
       return url.protocol === "https:" || url.protocol === "http:";
@@ -29,11 +31,17 @@ function getEventLink(event) {
   const officialEventUrl = event.source_url?.trim();
 
   if (isValidUrl(registrationUrl)) {
-    return { url: registrationUrl, label: "Official Registration ↗" };
+    return {
+      url: registrationUrl,
+      label: "Official Registration ↗",
+    };
   }
 
   if (isValidUrl(officialEventUrl)) {
-    return { url: officialEventUrl, label: "Official Event Page ↗" };
+    return {
+      url: officialEventUrl,
+      label: "Official Event Page ↗",
+    };
   }
 
   return null;
@@ -44,36 +52,71 @@ function getCategory(event) {
 
   if (text.includes("hackathon")) return "Hackathon";
   if (text.includes("workshop")) return "Workshop";
-  if (text.includes("conference") || text.includes("symposium")) return "Conference";
+
+  if (
+    text.includes("conference") ||
+    text.includes("symposium")
+  ) {
+    return "Conference";
+  }
 
   if (
     text.includes("cultural") ||
     text.includes("fest") ||
     text.includes("festival")
-  ) return "Cultural";
+  ) {
+    return "Cultural";
+  }
 
   if (
     text.includes("technical") ||
     text.includes("technology") ||
     text.includes("coding") ||
     text.includes("techno")
-  ) return "Technical";
+  ) {
+    return "Technical";
+  }
 
   return "Other";
 }
 
+// Correct date formatting for India (IST)
 function formatDate(value) {
-  if (!value) return "Date to be announced";
+  if (!value) {
+    return "Date to be announced";
+  }
 
-  const dateText = typeof value === "string" ? value.slice(0, 10) : value;
-  const date = new Date(`${dateText}T12:00:00`);
+  let date;
 
-  if (Number.isNaN(date.getTime())) return "Date to be announced";
+  // Handle MySQL DATE format: YYYY-MM-DD
+  if (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value)
+  ) {
+    const [year, month, day] = value.split("-").map(Number);
+
+    date = new Date(
+      year,
+      month - 1,
+      day,
+      12,
+      0,
+      0
+    );
+  } else {
+    // Handle ISO timestamps returned by the backend
+    date = new Date(value);
+  }
+
+  if (Number.isNaN(date.getTime())) {
+    return "Date to be announced";
+  }
 
   return date.toLocaleDateString("en-IN", {
     day: "numeric",
     month: "short",
     year: "numeric",
+    timeZone: "Asia/Kolkata",
   });
 }
 
@@ -106,7 +149,9 @@ function App() {
 
   const [user, setUser] = useState(() => {
     try {
-      return JSON.parse(sessionStorage.getItem("eventRaiderUser")) || null;
+      return JSON.parse(
+        sessionStorage.getItem("eventRaiderUser")
+      ) || null;
     } catch {
       return null;
     }
@@ -136,17 +181,22 @@ function App() {
         }
 
         if (!cancelled) {
-          setEvents(Array.isArray(data.events) ? data.events : []);
+          setEvents(
+            Array.isArray(data.events) ? data.events : []
+          );
         }
       } catch (error) {
         if (!cancelled) {
           setEventsError(
             "Could not load events. Make sure your backend and MySQL are running."
           );
+
           console.error("Event loading error:", error);
         }
       } finally {
-        if (!cancelled) setLoadingEvents(false);
+        if (!cancelled) {
+          setLoadingEvents(false);
+        }
       }
     }
 
@@ -176,7 +226,9 @@ function App() {
     const token = sessionStorage.getItem("eventRaiderToken");
 
     if (!token) {
-      setRegistrationsError("Please log in again to view your registrations.");
+      setRegistrationsError(
+        "Please log in again to view your registrations."
+      );
       return;
     }
 
@@ -194,11 +246,15 @@ function App() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to load your registrations.");
+        throw new Error(
+          data.message || "Unable to load your registrations."
+        );
       }
 
       setMyRegistrations(
-        Array.isArray(data.registrations) ? data.registrations : []
+        Array.isArray(data.registrations)
+          ? data.registrations
+          : []
       );
     } catch (error) {
       setRegistrationsError(
@@ -219,9 +275,12 @@ function App() {
     if (user.role !== "student") return;
 
     const shouldOpen = !showMyRegistrations;
+
     setShowMyRegistrations(shouldOpen);
 
-    if (shouldOpen) await fetchMyRegistrations();
+    if (shouldOpen) {
+      await fetchMyRegistrations();
+    }
   }
 
   // Register student for an event
@@ -233,7 +292,9 @@ function App() {
 
     if (user.role !== "student") {
       setRegistrationError(true);
-      setRegistrationMessage("Only student accounts can register for events.");
+      setRegistrationMessage(
+        "Only student accounts can register for events."
+      );
       return;
     }
 
@@ -257,12 +318,15 @@ function App() {
     setRegistrationError(false);
 
     try {
-      const response = await fetch(`${API_URL}/registrations/${eventId}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await fetch(
+        `${API_URL}/registrations/${eventId}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       const data = await response.json();
 
@@ -276,9 +340,12 @@ function App() {
         }! Check your email for confirmation.`
       );
 
-      if (showMyRegistrations) await fetchMyRegistrations();
+      if (showMyRegistrations) {
+        await fetchMyRegistrations();
+      }
     } catch (error) {
       setRegistrationError(true);
+
       setRegistrationMessage(
         error.message || "Unable to register. Please try again."
       );
@@ -303,8 +370,10 @@ function App() {
       );
 
     const eventCategory = getCategory(event);
+
     const matchesCategory =
-      category === "All Events" || eventCategory === category;
+      category === "All Events" ||
+      eventCategory === category;
 
     return matchesSearch && matchesCategory;
   });
@@ -323,6 +392,7 @@ function App() {
   // Close authentication modal
   function closeAuth() {
     if (authLoading) return;
+
     setAuthMode(null);
     setAuthMessage("");
   }
@@ -338,7 +408,9 @@ function App() {
     try {
       const isRegister = authMode === "register";
 
-      const endpoint = isRegister ? "/auth/register" : "/auth/login";
+      const endpoint = isRegister
+        ? "/auth/register"
+        : "/auth/login";
 
       const payload = isRegister
         ? {
@@ -362,14 +434,18 @@ function App() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Authentication failed.");
+        throw new Error(
+          data.message || "Authentication failed."
+        );
       }
 
       if (!data.user) {
-        throw new Error("User information was not returned by the server.");
+        throw new Error(
+          "User information was not returned by the server."
+        );
       }
 
-      // Verify selected login type against the backend account role
+      // Verify selected login type against backend account role
       if (!isRegister && data.user.role !== loginRole) {
         throw new Error(
           `This account is not registered as a ${loginRole}. Please select the correct login type.`
@@ -383,7 +459,10 @@ function App() {
       }
 
       if (!isRegister) {
-        sessionStorage.setItem("eventRaiderToken", data.token);
+        sessionStorage.setItem(
+          "eventRaiderToken",
+          data.token
+        );
       }
 
       sessionStorage.setItem(
@@ -405,6 +484,7 @@ function App() {
       }, 700);
     } catch (error) {
       setAuthError(true);
+
       setAuthMessage(
         error.message || "Something went wrong. Please try again."
       );
@@ -462,7 +542,10 @@ function App() {
                 Hi, {user.name || user.email}
               </span>
 
-              <button className="btn btn-outline" onClick={handleLogout}>
+              <button
+                className="btn btn-outline"
+                onClick={handleLogout}
+              >
                 Logout
               </button>
             </>
@@ -507,7 +590,10 @@ function App() {
             </p>
 
             <div className="hero-actions">
-              <a href="#events" className="btn btn-primary btn-large">
+              <a
+                href="#events"
+                className="btn btn-primary btn-large"
+              >
                 Explore Events <span>→</span>
               </a>
 
@@ -566,12 +652,19 @@ function App() {
 
         {/* My Registrations Section */}
         {showMyRegistrations && user?.role === "student" && (
-          <section className="events-section" id="my-registrations">
+          <section
+            className="events-section"
+            id="my-registrations"
+          >
             <div className="section-heading">
               <div>
-                <span className="section-eyebrow">YOUR EVENT ACTIVITY</span>
+                <span className="section-eyebrow">
+                  YOUR EVENT ACTIVITY
+                </span>
                 <h2>My Registrations</h2>
-                <p>Keep track of the events you have registered for.</p>
+                <p>
+                  Keep track of the events you have registered for.
+                </p>
               </div>
 
               <button
@@ -579,7 +672,9 @@ function App() {
                 onClick={fetchMyRegistrations}
                 disabled={loadingRegistrations}
               >
-                {loadingRegistrations ? "Refreshing..." : "↻ Refresh"}
+                {loadingRegistrations
+                  ? "Refreshing..."
+                  : "↻ Refresh"}
               </button>
             </div>
 
@@ -607,14 +702,15 @@ function App() {
                 <h3>No registrations yet</h3>
 
                 <p>
-                  You have not registered for any events. Explore events
-                  and register for your favourites!
+                  You have not registered for any events. Explore
+                  events and register for your favourites!
                 </p>
 
                 <button
                   className="btn btn-primary"
                   onClick={() => {
                     setShowMyRegistrations(false);
+
                     document.getElementById("events")?.scrollIntoView({
                       behavior: "smooth",
                     });
@@ -642,6 +738,7 @@ function App() {
                           <span className="event-category">
                             {registration.category || "Event"}
                           </span>
+
                           <span className="event-symbol">✦</span>
                         </div>
 
@@ -651,7 +748,8 @@ function App() {
 
                         <p className="event-college">
                           <span aria-hidden="true">⌂</span>
-                          {registration.college || "College not specified"}
+                          {registration.college ||
+                            "College not specified"}
                         </p>
 
                         <div className="event-meta">
@@ -671,7 +769,8 @@ function App() {
                         <p className="registration-status">
                           Status:{" "}
                           <strong>
-                            {registration.registration_status || "registered"}
+                            {registration.registration_status ||
+                              "registered"}
                           </strong>
                         </p>
 
@@ -710,9 +809,13 @@ function App() {
         <section className="events-section" id="events">
           <div className="section-heading">
             <div>
-              <span className="section-eyebrow">EXPLORE OPPORTUNITIES</span>
+              <span className="section-eyebrow">
+                EXPLORE OPPORTUNITIES
+              </span>
               <h2>Discover campus events</h2>
-              <p>Find your next hackathon, workshop, fest or conference.</p>
+              <p>
+                Find your next hackathon, workshop, fest or conference.
+              </p>
             </div>
 
             <span className="events-count">
@@ -817,6 +920,7 @@ function App() {
                       <span className="event-category">
                         {eventCategory}
                       </span>
+
                       <span className="event-symbol">✦</span>
                     </div>
 
@@ -845,7 +949,9 @@ function App() {
                       <button
                         type="button"
                         className="event-register-btn"
-                        onClick={() => handleEventRegistration(event.id)}
+                        onClick={() =>
+                          handleEventRegistration(event.id)
+                        }
                         disabled={registeringEvent === event.id}
                       >
                         {registeringEvent === event.id
@@ -890,14 +996,17 @@ function App() {
         {/* About Section */}
         <section className="about-section" id="about">
           <div className="about-content">
-            <span className="section-eyebrow">ABOUT EVENT RAIDER</span>
+            <span className="section-eyebrow">
+              ABOUT EVENT RAIDER
+            </span>
+
             <h2>Your campus life, all in one place.</h2>
 
             <p>
-              Event Raider brings college events together so students can
-              discover opportunities beyond their own campus. Explore
-              events and follow official college links for registration
-              and further information.
+              Event Raider brings college events together so students
+              can discover opportunities beyond their own campus.
+              Explore events and follow official college links for
+              registration and further information.
             </p>
 
             <a href="#events" className="btn btn-primary">
@@ -941,7 +1050,9 @@ function App() {
         <div
           className="modal-overlay"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeAuth();
+            if (event.target === event.currentTarget) {
+              closeAuth();
+            }
           }}
         >
           <div
@@ -1013,10 +1124,13 @@ function App() {
               {authMode === "register" && (
                 <label className="form-field">
                   <span>Full name</span>
+
                   <input
                     type="text"
                     value={name}
-                    onChange={(event) => setName(event.target.value)}
+                    onChange={(event) =>
+                      setName(event.target.value)
+                    }
                     placeholder="Enter your name"
                     autoComplete="name"
                     required
@@ -1026,10 +1140,13 @@ function App() {
 
               <label className="form-field">
                 <span>Email address</span>
+
                 <input
                   type="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) =>
+                    setEmail(event.target.value)
+                  }
                   placeholder="you@example.com"
                   autoComplete="email"
                   required
@@ -1038,17 +1155,22 @@ function App() {
 
               <label className="form-field">
                 <span>Password</span>
+
                 <input
                   type="password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
                   placeholder="Enter your password"
                   autoComplete={
                     authMode === "register"
                       ? "new-password"
                       : "current-password"
                   }
-                  minLength={authMode === "register" ? 8 : undefined}
+                  minLength={
+                    authMode === "register" ? 8 : undefined
+                  }
                   required
                 />
               </label>
@@ -1072,7 +1194,9 @@ function App() {
                   ? "Please wait..."
                   : authMode === "register"
                   ? "Create Account"
-                  : `Login as ${loginRole === "admin" ? "Admin" : "Student"}`}
+                  : `Login as ${
+                      loginRole === "admin" ? "Admin" : "Student"
+                    }`}
               </button>
             </form>
 
