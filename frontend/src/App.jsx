@@ -1,11 +1,9 @@
-
 import { useState, useEffect } from "react";
 import "./App.css";
 import AdminDashboard from "./components/AdminDashboard";
 
 const API_URL = (
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:5000/api"
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api"
 ).replace(/\/$/, "");
 
 const CATEGORIES = [
@@ -56,10 +54,7 @@ function getCategory(event) {
   if (text.includes("hackathon")) return "Hackathon";
   if (text.includes("workshop")) return "Workshop";
 
-  if (
-    text.includes("conference") ||
-    text.includes("symposium")
-  ) {
+  if (text.includes("conference") || text.includes("symposium")) {
     return "Conference";
   }
 
@@ -83,31 +78,18 @@ function getCategory(event) {
   return "Other";
 }
 
-// Correct date formatting for India (IST)
 function formatDate(value) {
-  if (!value) {
-    return "Date to be announced";
-  }
+  if (!value) return "Date to be announced";
 
   let date;
 
-  // Handle MySQL DATE format: YYYY-MM-DD
   if (
     typeof value === "string" &&
     /^\d{4}-\d{2}-\d{2}$/.test(value)
   ) {
     const [year, month, day] = value.split("-").map(Number);
-
-    date = new Date(
-      year,
-      month - 1,
-      day,
-      12,
-      0,
-      0
-    );
+    date = new Date(year, month - 1, day, 12, 0, 0);
   } else {
-    // Handle ISO timestamps returned by the backend
     date = new Date(value);
   }
 
@@ -143,18 +125,25 @@ function App() {
   // Authentication states
   const [authMode, setAuthMode] = useState(null);
   const [loginRole, setLoginRole] = useState("student");
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  // New student profile fields
+  const [phone, setPhone] = useState("");
+  const [college, setCollege] = useState("");
+  const [usn, setUsn] = useState("");
+  const [department, setDepartment] = useState("");
+  const [semester, setSemester] = useState("");
+
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [authError, setAuthError] = useState(false);
 
   const [user, setUser] = useState(() => {
     try {
-      return JSON.parse(
-        sessionStorage.getItem("eventRaiderUser")
-      ) || null;
+      return JSON.parse(sessionStorage.getItem("eventRaiderUser")) || null;
     } catch {
       return null;
     }
@@ -184,16 +173,13 @@ function App() {
         }
 
         if (!cancelled) {
-          setEvents(
-            Array.isArray(data.events) ? data.events : []
-          );
+          setEvents(Array.isArray(data.events) ? data.events : []);
         }
       } catch (error) {
         if (!cancelled) {
           setEventsError(
-            "Could not load events. Make sure your backend and MySQL are running."
+            "Could not load events. Make sure your backend and database are running."
           );
-
           console.error("Event loading error:", error);
         }
       } finally {
@@ -255,9 +241,7 @@ function App() {
       }
 
       setMyRegistrations(
-        Array.isArray(data.registrations)
-          ? data.registrations
-          : []
+        Array.isArray(data.registrations) ? data.registrations : []
       );
     } catch (error) {
       setRegistrationsError(
@@ -278,7 +262,6 @@ function App() {
     if (user.role !== "student") return;
 
     const shouldOpen = !showMyRegistrations;
-
     setShowMyRegistrations(shouldOpen);
 
     if (shouldOpen) {
@@ -311,7 +294,7 @@ function App() {
 
     const confirmed = window.confirm(
       "Are you sure you want to register for this event?\n\n" +
-      "Click OK to confirm or Cancel to go back."
+        "Click OK to confirm or Cancel to go back."
     );
 
     if (!confirmed) return;
@@ -348,7 +331,6 @@ function App() {
       }
     } catch (error) {
       setRegistrationError(true);
-
       setRegistrationMessage(
         error.message || "Unable to register. Please try again."
       );
@@ -375,8 +357,7 @@ function App() {
     const eventCategory = getCategory(event);
 
     const matchesCategory =
-      category === "All Events" ||
-      eventCategory === category;
+      category === "All Events" || eventCategory === category;
 
     return matchesSearch && matchesCategory;
   });
@@ -385,9 +366,17 @@ function App() {
   function openAuth(mode) {
     setAuthMode(mode);
     setLoginRole("student");
+
     setName("");
     setEmail("");
     setPassword("");
+
+    setPhone("");
+    setCollege("");
+    setUsn("");
+    setDepartment("");
+    setSemester("");
+
     setAuthMessage("");
     setAuthError(false);
   }
@@ -420,6 +409,11 @@ function App() {
             name: name.trim(),
             email: email.trim(),
             password,
+            phone: phone.trim(),
+            college: college.trim(),
+            usn: usn.trim(),
+            department: department.trim(),
+            semester: Number(semester),
           }
         : {
             email: email.trim(),
@@ -437,9 +431,7 @@ function App() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(
-          data.message || "Authentication failed."
-        );
+        throw new Error(data.message || "Authentication failed.");
       }
 
       if (!data.user) {
@@ -462,10 +454,7 @@ function App() {
       }
 
       if (!isRegister) {
-        sessionStorage.setItem(
-          "eventRaiderToken",
-          data.token
-        );
+        sessionStorage.setItem("eventRaiderToken", data.token);
       }
 
       sessionStorage.setItem(
@@ -487,7 +476,6 @@ function App() {
       }, 700);
     } catch (error) {
       setAuthError(true);
-
       setAuthMessage(
         error.message || "Something went wrong. Please try again."
       );
@@ -675,9 +663,7 @@ function App() {
                 onClick={fetchMyRegistrations}
                 disabled={loadingRegistrations}
               >
-                {loadingRegistrations
-                  ? "Refreshing..."
-                  : "↻ Refresh"}
+                {loadingRegistrations ? "Refreshing..." : "↻ Refresh"}
               </button>
             </div>
 
@@ -741,7 +727,6 @@ function App() {
                           <span className="event-category">
                             {registration.category || "Event"}
                           </span>
-
                           <span className="event-symbol">✦</span>
                         </div>
 
@@ -923,7 +908,6 @@ function App() {
                       <span className="event-category">
                         {eventCategory}
                       </span>
-
                       <span className="event-symbol">✦</span>
                     </div>
 
@@ -1125,25 +1109,107 @@ function App() {
 
             <form onSubmit={handleAuthSubmit}>
               {authMode === "register" && (
-                <label className="form-field">
-                  <span>Full name</span>
+                <>
+                  <label className="form-field">
+                    <span>Full name</span>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(event) =>
+                        setName(event.target.value)
+                      }
+                      placeholder="Enter your name"
+                      autoComplete="name"
+                      required
+                    />
+                  </label>
 
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(event) =>
-                      setName(event.target.value)
-                    }
-                    placeholder="Enter your name"
-                    autoComplete="name"
-                    required
-                  />
-                </label>
+                  <label className="form-field">
+                    <span>Phone number</span>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(event) =>
+                        setPhone(event.target.value)
+                      }
+                      placeholder="Enter your phone number"
+                      autoComplete="tel"
+                      pattern="[6-9][0-9]{9}"
+                      title="Enter a valid 10-digit Indian mobile number"
+                      maxLength={10}
+                      required
+                    />
+                  </label>
+
+                  <label className="form-field">
+                    <span>College / University</span>
+                    <input
+                      type="text"
+                      value={college}
+                      onChange={(event) =>
+                        setCollege(event.target.value)
+                      }
+                      placeholder="Enter your college name"
+                      required
+                    />
+                  </label>
+
+                  <label className="form-field">
+                    <span>USN / Student ID</span>
+                    <input
+                      type="text"
+                      value={usn}
+                      onChange={(event) =>
+                        setUsn(event.target.value)
+                      }
+                      placeholder="Enter your USN or student ID"
+                      required
+                    />
+                  </label>
+
+                  <label className="form-field">
+                    <span>Department</span>
+                    <input
+                      type="text"
+                      value={department}
+                      onChange={(event) =>
+                        setDepartment(event.target.value)
+                      }
+                      placeholder="Example: Computer Science"
+                      required
+                    />
+                  </label>
+
+                  <label className="form-field">
+                    <span>Semester</span>
+                    <select
+                      value={semester}
+                      onChange={(event) =>
+                        setSemester(event.target.value)
+                      }
+                      required
+                    >
+                      <option value="">Select your semester</option>
+                      {[1, 2, 3, 4, 5, 6, 7, 8].map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                          {item === 1
+                            ? "st"
+                            : item === 2
+                            ? "nd"
+                            : item === 3
+                            ? "rd"
+                            : "th"}{" "}
+                          Semester
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
               )}
 
               <label className="form-field">
                 <span>Email address</span>
-
                 <input
                   type="email"
                   value={email}
@@ -1158,7 +1224,6 @@ function App() {
 
               <label className="form-field">
                 <span>Password</span>
-
                 <input
                   type="password"
                   value={password}
