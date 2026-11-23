@@ -1,4 +1,3 @@
-
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -9,22 +8,39 @@ const router = express.Router();
 // Student registration
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const {
+      name,
+      email,
+      password,
+      phone,
+      college,
+      usn,
+      department,
+      semester,
+    } = req.body;
 
-    if (
-      typeof name !== "string" ||
-      typeof email !== "string" ||
-      typeof password !== "string" ||
-      !name.trim() ||
-      !email.trim() ||
-      !password
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Name, email, and password are required.",
-      });
+    // Validate required fields
+    const requiredFields = {
+      name,
+      email,
+      password,
+      phone,
+      college,
+      usn,
+      department,
+      semester,
+    };
+
+    for (const [field, value] of Object.entries(requiredFields)) {
+      if (typeof value !== "string" || !value.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: `${field} is required.`,
+        });
+      }
     }
 
+    // Validate password
     if (password.length < 8) {
       return res.status(400).json({
         success: false,
@@ -32,8 +48,26 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    // Validate phone
+    if (!/^[0-9+() -]{7,20}$/.test(phone.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid phone number.",
+      });
+    }
 
+    // Validate semester
+    if (!/^[1-8]$/.test(semester.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select a semester from 1 to 8.",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedUsn = usn.trim().toUpperCase();
+
+    // Check duplicate email
     const [existing] = await db.execute(
       "SELECT id FROM users WHERE email = ?",
       [normalizedEmail]
@@ -46,12 +80,47 @@ router.post("/register", async (req, res) => {
       });
     }
 
+    // Check duplicate USN
+    const [existingUsn] = await db.execute(
+      "SELECT id FROM users WHERE usn = ?",
+      [normalizedUsn]
+    );
+
+    if (existingUsn.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "This USN / Student ID is already registered.",
+      });
+    }
+
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // Insert student
     const [result] = await db.execute(
-      `INSERT INTO users (name, email, password, role)
-       VALUES (?, ?, ?, 'student')`,
-      [name.trim(), normalizedEmail, hashedPassword]
+      `INSERT INTO users
+        (
+          name,
+          email,
+          password,
+          role,
+          phone,
+          college,
+          usn,
+          department,
+          semester
+        )
+       VALUES (?, ?, ?, 'student', ?, ?, ?, ?, ?)`,
+      [
+        name.trim(),
+        normalizedEmail,
+        hashedPassword,
+        phone.trim(),
+        college.trim(),
+        normalizedUsn,
+        department.trim(),
+        semester.trim(),
+      ]
     );
 
     return res.status(201).json({
@@ -62,8 +131,14 @@ router.post("/register", async (req, res) => {
         name: name.trim(),
         email: normalizedEmail,
         role: "student",
+        phone: phone.trim(),
+        college: college.trim(),
+        usn: normalizedUsn,
+        department: department.trim(),
+        semester: semester.trim(),
       },
     });
+
   } catch (error) {
     console.error("Registration error:", error.message);
 
@@ -74,7 +149,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// Student login
+// Login for students and admins
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -92,7 +167,19 @@ router.post("/login", async (req, res) => {
     }
 
     const [users] = await db.execute(
-      "SELECT id, name, email, password, role FROM users WHERE email = ?",
+      `SELECT
+        id,
+        name,
+        email,
+        password,
+        role,
+        phone,
+        college,
+        usn,
+        department,
+        semester
+       FROM users
+       WHERE email = ?`,
       [email.trim().toLowerCase()]
     );
 
@@ -104,6 +191,7 @@ router.post("/login", async (req, res) => {
     }
 
     const user = users[0];
+
     const passwordMatches = await bcrypt.compare(
       password,
       user.password
@@ -117,7 +205,7 @@ router.post("/login", async (req, res) => {
     }
 
     if (!process.env.JWT_SECRET) {
-      console.error("JWT_SECRET is missing from .env");
+      console.error("JWT_SECRET is missing.");
 
       return res.status(500).json({
         success: false,
@@ -126,9 +214,14 @@ router.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, role: user.role },
+      {
+        id: user.id,
+        role: user.role,
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "2h" }
+      {
+        expiresIn: "2h",
+      }
     );
 
     return res.json({
@@ -140,8 +233,14 @@ router.post("/login", async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        phone: user.phone,
+        college: user.college,
+        usn: user.usn,
+        department: user.department,
+        semester: user.semester,
       },
     });
+
   } catch (error) {
     console.error("Login error:", error.message);
 
