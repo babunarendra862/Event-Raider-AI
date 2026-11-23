@@ -13,13 +13,56 @@ const registrationRoutes = require("./routes/registrations");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// Allowed frontend origins
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://event-raider-ai.vercel.app",
+];
+
+// Add additional frontend domains through Render environment variables
+if (process.env.FRONTEND_URL) {
+  const additionalOrigins = process.env.FRONTEND_URL
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  allowedOrigins.push(...additionalOrigins);
+}
+
+// CORS configuration
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: (origin, callback) => {
+      // Allow requests without an Origin header
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.log("CORS blocked origin:", origin);
+      return callback(new Error("Origin not allowed by CORS"));
+    },
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
+    optionsSuccessStatus: 204,
   })
 );
 
+// Parse JSON requests
 app.use(express.json());
 
 // Home route
@@ -68,6 +111,8 @@ app.use("/api/events", eventRoutes);
 
 // Admin routes
 app.use("/api/admin", adminRoutes);
+
+// Registration routes
 app.use("/api/registrations", registrationRoutes);
 
 // 404 handler
@@ -95,6 +140,6 @@ app.use((err, req, res, next) => {
 // Start server
 app.listen(PORT, () => {
   console.log(
-    `Event Raider server running at http://localhost:${PORT}`
+    `Event Raider server running on port ${PORT}`
   );
 });

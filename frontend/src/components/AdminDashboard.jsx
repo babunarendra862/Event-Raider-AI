@@ -2,7 +2,11 @@
 import { useState, useEffect, useCallback } from "react";
 import "./AdminDashboard.css";
 
-const API_URL = "http://localhost:5000/api";
+// Use the deployed backend URL in production
+const API_URL = (
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:5000/api"
+).replace(/\/$/, "");
 
 export default function AdminDashboard({ onLogout }) {
   const [stats, setStats] = useState({
@@ -40,7 +44,7 @@ export default function AdminDashboard({ onLogout }) {
       });
     } catch (err) {
       throw new Error(
-        "Cannot connect to backend. Check that your Node.js server is running."
+        "Cannot connect to backend. Please check your internet connection or backend server."
       );
     }
 
@@ -134,6 +138,7 @@ export default function AdminDashboard({ onLogout }) {
       await fetchDashboard();
     } catch (err) {
       setError(err.message);
+      console.error("Event status update error:", err);
     }
   };
 
@@ -248,7 +253,9 @@ export default function AdminDashboard({ onLogout }) {
         {activeTab === "overview" && (
           <>
             {loading ? (
-              <div className="admin-loading">Loading dashboard...</div>
+              <div className="admin-loading">
+                Loading dashboard...
+              </div>
             ) : (
               <>
                 <section className="admin-stats">
@@ -278,7 +285,9 @@ export default function AdminDashboard({ onLogout }) {
                 </section>
 
                 <section className="admin-section">
-                  <span className="admin-eyebrow">EVENT MANAGEMENT</span>
+                  <span className="admin-eyebrow">
+                    EVENT MANAGEMENT
+                  </span>
                   <h2>Event Status</h2>
 
                   <div className="admin-status-grid">
@@ -332,7 +341,9 @@ export default function AdminDashboard({ onLogout }) {
             </div>
 
             {loading ? (
-              <div className="admin-loading">Loading events...</div>
+              <div className="admin-loading">
+                Loading events...
+              </div>
             ) : events.length === 0 ? (
               <div className="admin-info-card">
                 <h3>No events found</h3>
@@ -351,10 +362,14 @@ export default function AdminDashboard({ onLogout }) {
                       <p>{event.college}</p>
 
                       {event.event_date && (
-                        <p>📅 {String(event.event_date).slice(0, 10)}</p>
+                        <p>
+                          📅 {String(event.event_date).slice(0, 10)}
+                        </p>
                       )}
 
-                      {event.location && <p>📍 {event.location}</p>}
+                      {event.location && (
+                        <p>📍 {event.location}</p>
+                      )}
 
                       <span className="admin-event-status">
                         {event.event_status}
