@@ -2,15 +2,6 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const nodemailer = require("nodemailer");
-
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
 
 const {
   authenticateToken,
@@ -39,144 +30,80 @@ router.post("/:eventId", authenticateToken, requireStudent, async (req, res) => 
       });
     }
 
-    // Check whether event is approved and upcoming
+    // Step 1: Find the event without applying eligibility filters
     const [events] = await db.execute(
       `SELECT
-        id, title, college, event_date, location,
-        registration_url, source_url
+        id,
+        title,
+        college,
+        event_date,
+        DATE_FORMAT(event_date, '%Y-%m-%d') AS event_day,
+        location,
+        registration_url,
+        source_url,
+        event_status
        FROM events
-       WHERE id = ?
-       AND event_status = 'upcoming'
-       AND event_date IS NOT NULL
-       AND DATE(event_date) >= ?`,
-      [eventId, getToday()]
+       WHERE id = ?`,
+      [eventId]
     );
 
+    // Check whether event exists
     if (events.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "This event is unavailable for registration.",
+        message: "Event not found in the database.",
       });
     }
 
     const event = events[0];
 
-    // Save student registration
+    // Step 2: Check event status
+    if (
+      String(event.event_status || "").trim().toLowerCase() !== "upcoming"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: `Event is not available. Current status: ${event.event_status || "Not set"}.`,
+      });
+    }
+
+    // Step 3: Check event date
+    if (!event.event_day) {
+      return res.status(409).json({
+        success: false,
+        message: "Event date is missing. Please contact the administrator.",
+      });
+    }
+
+    // Step 4: Reject expired events
+    if (event.event_day < getToday()) {
+      return res.status(409).json({
+        success: false,
+        message: `This event has expired. Event date: ${event.event_day}.`,
+      });
+    }
+
+    // Step 5: Register student
     await db.execute(
       `INSERT INTO event_registrations (student_id, event_id)
        VALUES (?, ?)`,
       [req.user.id, eventId]
     );
 
-    const officialLink =
-      event.registration_url || event.source_url;
-
-    // Format date
-    const formattedDate = new Date(event.event_date).toLocaleString(
-      "en-IN",
-      {
-        timeZone: "Asia/Kolkata",
-        dateStyle: "long",
-        timeStyle: "short",
-      }
+    console.log(
+      `Student ${req.user.id} registered successfully for event ${eventId}`
     );
-
-    // Send confirmation email
-    let emailSent = false;
-
-    try {
-      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        throw new Error("Email configuration is missing.");
-      }
-
-      await transporter.sendMail({
-        from: `"Event Raider AI" <${process.env.EMAIL_USER}>`,
-        to: req.user.email,
-        subject: "Event Registration Confirmed!",
-        html: `
-          <div style="
-            font-family:Arial,sans-serif;
-            max-width:600px;
-            margin:auto;
-            padding:25px;
-            color:#333;
-          ">
-            <h2 style="color:#6c4cff;">
-              Registration Successful!
-            </h2>
-
-            <p>Hello <strong>${req.user.name}</strong>,</p>
-
-            <p>
-              Your registration through Event Raider AI
-              has been successfully saved.
-            </p>
-
-            <h3>Event Details</h3>
-
-            <p><strong>Event:</strong> ${event.title}</p>
-            <p><strong>College:</strong> ${event.college || "Not specified"}</p>
-            <p><strong>Date:</strong> ${formattedDate}</p>
-            <p><strong>Venue:</strong> ${event.location || "To be announced"}</p>
-
-            ${
-              officialLink
-                ? `
-                  <div style="margin:25px 0;">
-                    <a
-                      href="${officialLink}"
-                      style="
-                        background:#6c4cff;
-                        color:white;
-                        padding:13px 22px;
-                        text-decoration:none;
-                        border-radius:6px;
-                        display:inline-block;
-                      "
-                    >
-                      Visit Official Event Page
-                    </a>
-                  </div>
-                `
-                : `
-                  <p>
-                    The official event link is currently unavailable.
-                    Please check the college event website.
-                  </p>
-                `
-            }
-
-            <p>We look forward to seeing you at the event!</p>
-
-            <p>
-              Best regards,<br/>
-              <strong>Event Raider AI Team</strong>
-            </p>
-          </div>
-        `,
-      });
-
-      emailSent = true;
-
-      console.log(
-        "Event confirmation email sent to:",
-        req.user.email
-      );
-
-    } catch (emailError) {
-      console.error(
-        "Event confirmation email failed:",
-        emailError.message
-      );
-    }
 
     return res.status(201).json({
       success: true,
-      message: emailSent
-        ? "Registration successful! Confirmation email sent."
-        : "Registration successful, but confirmation email could not be sent.",
-      emailSent,
-      event,
+      message: "Registration successful!",
+      event: {
+        id: event.id,
+        title: event.title,
+        college: event.college,
+        event_date: event.event_date,
+        location: event.location,
+      },
     });
 
   } catch (error) {
