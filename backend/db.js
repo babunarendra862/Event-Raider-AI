@@ -4,12 +4,20 @@ const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
-const ca = process.env.DB_SSL_CA
-  ? process.env.DB_SSL_CA.replace(/\\n/g, "\n")
-  : fs.readFileSync(
-      path.join(__dirname, "certs", "tidb-ca.pem"),
-      "utf8"
-    );
+let ca;
+
+// Load CA certificate
+if (process.env.DB_SSL_CA && process.env.DB_SSL_CA.trim()) {
+  ca = process.env.DB_SSL_CA.replace(/\\n/g, "\n");
+} else {
+  const caPath = path.join(
+    __dirname,
+    "certs",
+    "tidb-ca.pem"
+  );
+
+  ca = fs.readFileSync(caPath, "utf8");
+}
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -17,10 +25,13 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   port: Number(process.env.DB_PORT),
+
   ssl: {
-    ca,
+    ca: ca,
     minVersion: "TLSv1.2",
+    rejectUnauthorized: true,
   },
+
   waitForConnections: true,
   connectionLimit: 10,
 });

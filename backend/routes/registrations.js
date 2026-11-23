@@ -39,10 +39,11 @@ router.post("/:eventId", authenticateToken, requireStudent, async (req, res) => 
       });
     }
 
-    // Check whether the event is approved and upcoming
+    // Check whether event is approved and upcoming
     const [events] = await db.execute(
-      `SELECT id, title, event_date, location,
-              registration_url, source_url
+      `SELECT
+        id, title, college, event_date, location,
+        registration_url, source_url
        FROM events
        WHERE id = ?
        AND event_status = 'upcoming'
@@ -58,6 +59,8 @@ router.post("/:eventId", authenticateToken, requireStudent, async (req, res) => 
       });
     }
 
+    const event = events[0];
+
     // Save student registration
     await db.execute(
       `INSERT INTO event_registrations (student_id, event_id)
@@ -65,118 +68,115 @@ router.post("/:eventId", authenticateToken, requireStudent, async (req, res) => 
       [req.user.id, eventId]
     );
 
-    // Select official registration link
     const officialLink =
-      events[0].registration_url || events[0].source_url;
+      event.registration_url || event.source_url;
 
-    // Send registration confirmation email
+    // Format date
+    const formattedDate = new Date(event.event_date).toLocaleString(
+      "en-IN",
+      {
+        timeZone: "Asia/Kolkata",
+        dateStyle: "long",
+        timeStyle: "short",
+      }
+    );
+
+    // Send confirmation email
+    let emailSent = false;
+
     try {
+      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        throw new Error("Email configuration is missing.");
+      }
+
       await transporter.sendMail({
         from: `"Event Raider AI" <${process.env.EMAIL_USER}>`,
         to: req.user.email,
         subject: "Event Registration Confirmed!",
         html: `
           <div style="
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: auto;
-            padding: 25px;
-            color: #333;
+            font-family:Arial,sans-serif;
+            max-width:600px;
+            margin:auto;
+            padding:25px;
+            color:#333;
           ">
-
-            <h2 style="color: #6c4cff;">
+            <h2 style="color:#6c4cff;">
               Registration Successful!
             </h2>
 
-            <p>Hello ${req.user.name},</p>
+            <p>Hello <strong>${req.user.name}</strong>,</p>
 
             <p>
-              Thank you for registering through Event Raider AI.
-              Your registration has been successfully completed.
+              Your registration through Event Raider AI
+              has been successfully saved.
             </p>
 
             <h3>Event Details</h3>
 
-            <p>
-              <strong>Event:</strong> ${events[0].title}
-            </p>
-
-            <p>
-              <strong>Date:</strong>
-              ${events[0].event_date}
-            </p>
-
-            <p>
-              <strong>Venue:</strong>
-              ${events[0].location || "To be announced"}
-            </p>
+            <p><strong>Event:</strong> ${event.title}</p>
+            <p><strong>College:</strong> ${event.college || "Not specified"}</p>
+            <p><strong>Date:</strong> ${formattedDate}</p>
+            <p><strong>Venue:</strong> ${event.location || "To be announced"}</p>
 
             ${
               officialLink
                 ? `
-                  <div style="margin: 25px 0;">
+                  <div style="margin:25px 0;">
                     <a
                       href="${officialLink}"
-                      target="_blank"
                       style="
-                        background-color: #6c4cff;
-                        color: white;
-                        padding: 13px 22px;
-                        text-decoration: none;
-                        border-radius: 6px;
-                        display: inline-block;
-                        font-weight: bold;
+                        background:#6c4cff;
+                        color:white;
+                        padding:13px 22px;
+                        text-decoration:none;
+                        border-radius:6px;
+                        display:inline-block;
                       "
                     >
-                      Visit Official Registration Page
+                      Visit Official Event Page
                     </a>
                   </div>
-
-                  <p>
-                    You can also copy this link:
-                    <br />
-                    <a href="${officialLink}">
-                      ${officialLink}
-                    </a>
-                  </p>
                 `
                 : `
                   <p>
-                    The official registration link is currently unavailable.
+                    The official event link is currently unavailable.
                     Please check the college event website.
                   </p>
                 `
             }
 
-            <p>
-              We look forward to seeing you at the event!
-            </p>
+            <p>We look forward to seeing you at the event!</p>
 
             <p>
-              Best regards,<br />
+              Best regards,<br/>
               <strong>Event Raider AI Team</strong>
             </p>
-
           </div>
         `,
       });
 
+      emailSent = true;
+
       console.log(
-        "Confirmation email sent to:",
+        "Event confirmation email sent to:",
         req.user.email
       );
 
     } catch (emailError) {
       console.error(
-        "Confirmation email failed:",
+        "Event confirmation email failed:",
         emailError.message
       );
     }
 
     return res.status(201).json({
       success: true,
-      message: "Registration successful!",
-      event: events[0],
+      message: emailSent
+        ? "Registration successful! Confirmation email sent."
+        : "Registration successful, but confirmation email could not be sent.",
+      emailSent,
+      event,
     });
 
   } catch (error) {

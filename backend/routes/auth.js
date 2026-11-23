@@ -2,9 +2,59 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 const db = require("../db");
 
 const router = express.Router();
+
+// Email transporter
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+// Send welcome email
+async function sendWelcomeEmail(student) {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    throw new Error("Email configuration is missing.");
+  }
+
+  await transporter.sendMail({
+    from: `"Event Raider AI" <${process.env.EMAIL_USER}>`,
+    to: student.email,
+    subject: "Welcome to Event Raider AI!",
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:25px;color:#333;">
+        <h2 style="color:#6c4cff;">Welcome to Event Raider AI!</h2>
+
+        <p>Hello <strong>${student.name}</strong>,</p>
+
+        <p>Your student account has been successfully created.</p>
+
+        <h3>Your Student Details</h3>
+
+        <p><strong>Name:</strong> ${student.name}</p>
+        <p><strong>Email:</strong> ${student.email}</p>
+        <p><strong>College:</strong> ${student.college}</p>
+        <p><strong>USN:</strong> ${student.usn}</p>
+        <p><strong>Department:</strong> ${student.department}</p>
+        <p><strong>Semester:</strong> ${student.semester}</p>
+
+        <p>You can now log in and explore upcoming college events.</p>
+
+        <p>Happy exploring!</p>
+
+        <p>
+          Best regards,<br/>
+          <strong>Event Raider AI Team</strong>
+        </p>
+      </div>
+    `,
+  });
+}
 
 // ==========================================
 // STUDENT REGISTRATION
@@ -23,7 +73,6 @@ router.post("/register", async (req, res) => {
       semester,
     } = req.body || {};
 
-    // Validate required text fields
     const requiredFields = {
       name,
       email,
@@ -35,10 +84,7 @@ router.post("/register", async (req, res) => {
     };
 
     for (const [field, value] of Object.entries(requiredFields)) {
-      if (
-        typeof value !== "string" ||
-        !value.trim()
-      ) {
+      if (typeof value !== "string" || !value.trim()) {
         return res.status(400).json({
           success: false,
           message: `${field} is required.`,
@@ -46,7 +92,6 @@ router.post("/register", async (req, res) => {
       }
     }
 
-    // Validate semester (frontend sends a NUMBER)
     const semesterNumber = Number(semester);
 
     if (
@@ -63,7 +108,6 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // Validate password
     if (password.length < 8) {
       return res.status(400).json({
         success: false,
@@ -71,7 +115,6 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // Validate phone
     const normalizedPhone = phone.trim();
 
     if (!/^[0-9+() -]{7,20}$/.test(normalizedPhone)) {
@@ -81,14 +124,12 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // Normalize user information
     const normalizedName = name.trim();
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedCollege = college.trim();
     const normalizedUsn = usn.trim().toUpperCase();
     const normalizedDepartment = department.trim();
 
-    // Check duplicate email
     const [existing] = await db.execute(
       "SELECT id FROM users WHERE email = ?",
       [normalizedEmail]
@@ -101,7 +142,6 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // Check duplicate USN
     const [existingUsn] = await db.execute(
       "SELECT id FROM users WHERE usn = ?",
       [normalizedUsn]
@@ -114,22 +154,13 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Insert student into database
     const [result] = await db.execute(
       `INSERT INTO users
         (
-          name,
-          email,
-          password,
-          role,
-          phone,
-          college,
-          usn,
-          department,
-          semester
+          name, email, password, role, phone,
+          college, usn, department, semester
         )
        VALUES (?, ?, ?, 'student', ?, ?, ?, ?, ?)`,
       [
@@ -144,9 +175,32 @@ router.post("/register", async (req, res) => {
       ]
     );
 
+    // Send welcome email after successful database insertion
+    let emailSent = false;
+
+    try {
+      await sendWelcomeEmail({
+        name: normalizedName,
+        email: normalizedEmail,
+        college: normalizedCollege,
+        usn: normalizedUsn,
+        department: normalizedDepartment,
+        semester: semesterNumber,
+      });
+
+      emailSent = true;
+      console.log("Welcome email sent to:", normalizedEmail);
+
+    } catch (emailError) {
+      console.error("Welcome email failed:", emailError.message);
+    }
+
     return res.status(201).json({
       success: true,
-      message: "Student registered successfully.",
+      message: emailSent
+        ? "Student registered successfully. Welcome email sent."
+        : "Student registered successfully, but welcome email could not be sent.",
+      emailSent,
       user: {
         id: result.insertId,
         name: normalizedName,
@@ -192,16 +246,8 @@ router.post("/login", async (req, res) => {
 
     const [users] = await db.execute(
       `SELECT
-        id,
-        name,
-        email,
-        password,
-        role,
-        phone,
-        college,
-        usn,
-        department,
-        semester
+        id, name, email, password, role,
+        phone, college, usn, department, semester
        FROM users
        WHERE email = ?`,
       [email.trim().toLowerCase()]
@@ -216,7 +262,6 @@ router.post("/login", async (req, res) => {
 
     const user = users[0];
 
-    // Compare password
     const passwordMatches = await bcrypt.compare(
       password,
       user.password
@@ -229,7 +274,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // Check JWT configuration
     if (!process.env.JWT_SECRET) {
       console.error("JWT_SECRET is missing.");
 
@@ -239,7 +283,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // Generate token
     const token = jwt.sign(
       {
         id: user.id,
