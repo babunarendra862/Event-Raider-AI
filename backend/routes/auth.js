@@ -2,64 +2,72 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 const db = require("../db");
 
 const router = express.Router();
 
-// Email transporter
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const RESEND_API_URL = "https://api.resend.com/emails";
 
-// Send welcome email
-async function sendWelcomeEmail(student) {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    throw new Error("Email configuration is missing.");
-  }
-
-  await transporter.sendMail({
-    from: `"Event Raider AI" <${process.env.EMAIL_USER}>`,
-    to: student.email,
-    subject: "Welcome to Event Raider AI!",
-    html: `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:25px;color:#333;">
-        <h2 style="color:#6c4cff;">Welcome to Event Raider AI!</h2>
-
-        <p>Hello <strong>${student.name}</strong>,</p>
-
-        <p>Your student account has been successfully created.</p>
-
-        <h3>Your Student Details</h3>
-
-        <p><strong>Name:</strong> ${student.name}</p>
-        <p><strong>Email:</strong> ${student.email}</p>
-        <p><strong>College:</strong> ${student.college}</p>
-        <p><strong>USN:</strong> ${student.usn}</p>
-        <p><strong>Department:</strong> ${student.department}</p>
-        <p><strong>Semester:</strong> ${student.semester}</p>
-
-        <p>You can now log in and explore upcoming college events.</p>
-
-        <p>Happy exploring!</p>
-
-        <p>
-          Best regards,<br/>
-          <strong>Event Raider AI Team</strong>
-        </p>
-      </div>
-    `,
+// Escape user-provided values before inserting them into HTML.
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => {
+    const entities = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+    return entities[char];
   });
 }
 
-// ==========================================
-// STUDENT REGISTRATION
-// ==========================================
+async function sendWelcomeEmail(student) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error("RESEND_API_KEY is missing.");
+  }
 
+  const response = await fetch(RESEND_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from:
+        process.env.RESEND_FROM ||
+        "Event Raider AI <onboarding@resend.dev>",
+      to: [student.email],
+      subject: "Welcome to Event Raider AI!",
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:20px;">
+          <h2>Welcome to Event Raider AI, ${escapeHtml(student.name)}!</h2>
+          <p>Your student account has been created successfully.</p>
+          <p>You can now explore college events and register for events through Event Raider AI.</p>
+          <hr />
+          <p><strong>Name:</strong> ${escapeHtml(student.name)}</p>
+          <p><strong>Email:</strong> ${escapeHtml(student.email)}</p>
+          <p><strong>College:</strong> ${escapeHtml(student.college)}</p>
+          <p><strong>USN:</strong> ${escapeHtml(student.usn)}</p>
+          <p>Thank you for joining us!</p>
+          <p><strong>Event Raider AI Team</strong></p>
+        </div>
+      `,
+    }),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      result.message || result.error || "Welcome email could not be sent."
+    );
+  }
+
+  return result;
+}
+
+// STUDENT REGISTRATION
 router.post("/register", async (req, res) => {
   try {
     const {
@@ -71,186 +79,140 @@ router.post("/register", async (req, res) => {
       usn,
       department,
       semester,
-    } = req.body || {};
+    } = req.body;
 
-    const requiredFields = {
-      name,
-      email,
-      password,
-      phone,
-      college,
-      usn,
-      department,
-    };
-
-    for (const [field, value] of Object.entries(requiredFields)) {
-      if (typeof value !== "string" || !value.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: `${field} is required.`,
-        });
-      }
+    if (
+      !name ||
+      !email ||
+      !password ||
+      !phone ||
+      !college ||
+      !usn ||
+      !department ||
+      semester === undefined ||
+      semester === null ||
+      semester === ""
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please fill in all required fields.",
+      });
     }
 
     const semesterNumber = Number(semester);
 
     if (
-      semester === undefined ||
-      semester === null ||
-      semester === "" ||
       !Number.isInteger(semesterNumber) ||
       semesterNumber < 1 ||
       semesterNumber > 8
     ) {
       return res.status(400).json({
         success: false,
-        message: "Please select a valid semester from 1 to 8.",
+        message: "Semester must be between 1 and 8.",
       });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: "Password must be at least 8 characters.",
-      });
-    }
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const normalizedUsn = String(usn).trim().toUpperCase();
 
-    const normalizedPhone = phone.trim();
-
-    if (!/^[0-9+() -]{7,20}$/.test(normalizedPhone)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please enter a valid phone number.",
-      });
-    }
-
-    const normalizedName = name.trim();
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedCollege = college.trim();
-    const normalizedUsn = usn.trim().toUpperCase();
-    const normalizedDepartment = department.trim();
-
-    const [existing] = await db.execute(
-      "SELECT id FROM users WHERE email = ?",
+    // Check duplicate email.
+    const [existingEmail] = await db.query(
+      "SELECT id FROM users WHERE email = ? LIMIT 1",
       [normalizedEmail]
     );
 
-    if (existing.length > 0) {
+    if (existingEmail.length > 0) {
       return res.status(409).json({
         success: false,
-        message: "An account with this email already exists.",
+        message: "Email is already registered.",
       });
     }
 
-    const [existingUsn] = await db.execute(
-      "SELECT id FROM users WHERE usn = ?",
+    // Check duplicate USN.
+    const [existingUsn] = await db.query(
+      "SELECT id FROM users WHERE usn = ? LIMIT 1",
       [normalizedUsn]
     );
 
     if (existingUsn.length > 0) {
       return res.status(409).json({
         success: false,
-        message: "This USN / Student ID is already registered.",
+        message: "USN is already registered.",
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    const [result] = await db.execute(
+    // Create student account.
+    const [insertResult] = await db.query(
       `INSERT INTO users
-        (
-          name, email, password, role, phone,
-          college, usn, department, semester
-        )
-       VALUES (?, ?, ?, 'student', ?, ?, ?, ?, ?)`,
+       (name, email, password, role, phone, college, usn, department, semester)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        normalizedName,
+        String(name).trim(),
         normalizedEmail,
         hashedPassword,
-        normalizedPhone,
-        normalizedCollege,
+        "student",
+        String(phone).trim(),
+        String(college).trim(),
         normalizedUsn,
-        normalizedDepartment,
+        String(department).trim(),
         semesterNumber,
       ]
     );
 
-    // Send welcome email after successful database insertion
-    let emailSent = false;
+    const student = {
+      id: insertResult.insertId,
+      name: String(name).trim(),
+      email: normalizedEmail,
+      role: "student",
+      phone: String(phone).trim(),
+      college: String(college).trim(),
+      usn: normalizedUsn,
+      department: String(department).trim(),
+      semester: semesterNumber,
+    };
 
+    // Send welcome email. Registration remains successful if email fails.
     try {
-      await sendWelcomeEmail({
-        name: normalizedName,
-        email: normalizedEmail,
-        college: normalizedCollege,
-        usn: normalizedUsn,
-        department: normalizedDepartment,
-        semester: semesterNumber,
-      });
-
-      emailSent = true;
-      console.log("Welcome email sent to:", normalizedEmail);
-
+      await sendWelcomeEmail(student);
+      console.log("Welcome email sent to:", student.email);
     } catch (emailError) {
       console.error("Welcome email failed:", emailError.message);
     }
 
     return res.status(201).json({
       success: true,
-      message: emailSent
-        ? "Student registered successfully. Welcome email sent."
-        : "Student registered successfully, but welcome email could not be sent.",
-      emailSent,
-      user: {
-        id: result.insertId,
-        name: normalizedName,
-        email: normalizedEmail,
-        role: "student",
-        phone: normalizedPhone,
-        college: normalizedCollege,
-        usn: normalizedUsn,
-        department: normalizedDepartment,
-        semester: semesterNumber,
-      },
+      message: "Registration successful!",
+      user: student,
     });
-
   } catch (error) {
     console.error("Registration error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to register. Please try again.",
+      message: "Registration failed. Please try again.",
     });
   }
 });
 
-// ==========================================
-// LOGIN FOR STUDENTS AND ADMINS
-// ==========================================
-
+// STUDENT LOGIN
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body || {};
+    const { email, password } = req.body;
 
-    if (
-      typeof email !== "string" ||
-      typeof password !== "string" ||
-      !email.trim() ||
-      !password
-    ) {
+    if (!email || !password) {
       return res.status(400).json({
         success: false,
         message: "Email and password are required.",
       });
     }
 
-    const [users] = await db.execute(
-      `SELECT
-        id, name, email, password, role,
-        phone, college, usn, department, semester
-       FROM users
-       WHERE email = ?`,
-      [email.trim().toLowerCase()]
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    const [users] = await db.query(
+      "SELECT * FROM users WHERE email = ? LIMIT 1",
+      [normalizedEmail]
     );
 
     if (users.length === 0) {
@@ -262,12 +224,12 @@ router.post("/login", async (req, res) => {
 
     const user = users[0];
 
-    const passwordMatches = await bcrypt.compare(
+    const passwordMatch = await bcrypt.compare(
       password,
       user.password
     );
 
-    if (!passwordMatches) {
+    if (!passwordMatch) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
@@ -275,12 +237,7 @@ router.post("/login", async (req, res) => {
     }
 
     if (!process.env.JWT_SECRET) {
-      console.error("JWT_SECRET is missing.");
-
-      return res.status(500).json({
-        success: false,
-        message: "Server authentication is not configured.",
-      });
+      throw new Error("JWT_SECRET is missing.");
     }
 
     const token = jwt.sign(
@@ -294,29 +251,30 @@ router.post("/login", async (req, res) => {
       }
     );
 
-    return res.json({
-      success: true,
-      message: "Login successful.",
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        phone: user.phone,
-        college: user.college,
-        usn: user.usn,
-        department: user.department,
-        semester: user.semester,
-      },
-    });
+    const safeUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      phone: user.phone,
+      college: user.college,
+      usn: user.usn,
+      department: user.department,
+      semester: user.semester,
+    };
 
+    return res.status(200).json({
+      success: true,
+      message: "Login successful!",
+      token,
+      user: safeUser,
+    });
   } catch (error) {
     console.error("Login error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to log in. Please try again.",
+      message: "Login failed. Please try again.",
     });
   }
 });
