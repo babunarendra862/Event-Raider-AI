@@ -3,20 +3,9 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-function getIndiaDate() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
-// GET all valid upcoming events
+// GET all admin-approved events
 router.get("/", async (req, res) => {
   try {
-    const today = getIndiaDate();
-
     const [events] = await db.execute(
       `SELECT
         id,
@@ -30,10 +19,10 @@ router.get("/", async (req, res) => {
         source_url
       FROM events
       WHERE event_status = 'upcoming'
-        AND event_date IS NOT NULL
-        AND DATE(event_date) >= ?
-      ORDER BY event_date ASC`,
-      [today]
+      ORDER BY
+        event_date IS NULL ASC,
+        event_date ASC,
+        id DESC`
     );
 
     return res.status(200).json({
