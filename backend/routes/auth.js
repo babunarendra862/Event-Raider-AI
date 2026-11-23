@@ -1,3 +1,4 @@
+
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -5,7 +6,10 @@ const db = require("../db");
 
 const router = express.Router();
 
-// Student registration
+// ==========================================
+// STUDENT REGISTRATION
+// ==========================================
+
 router.post("/register", async (req, res) => {
   try {
     const {
@@ -17,9 +21,9 @@ router.post("/register", async (req, res) => {
       usn,
       department,
       semester,
-    } = req.body;
+    } = req.body || {};
 
-    // Validate required fields
+    // Validate required text fields
     const requiredFields = {
       name,
       email,
@@ -28,16 +32,35 @@ router.post("/register", async (req, res) => {
       college,
       usn,
       department,
-      semester,
     };
 
     for (const [field, value] of Object.entries(requiredFields)) {
-      if (typeof value !== "string" || !value.trim()) {
+      if (
+        typeof value !== "string" ||
+        !value.trim()
+      ) {
         return res.status(400).json({
           success: false,
           message: `${field} is required.`,
         });
       }
+    }
+
+    // Validate semester (frontend sends a NUMBER)
+    const semesterNumber = Number(semester);
+
+    if (
+      semester === undefined ||
+      semester === null ||
+      semester === "" ||
+      !Number.isInteger(semesterNumber) ||
+      semesterNumber < 1 ||
+      semesterNumber > 8
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select a valid semester from 1 to 8.",
+      });
     }
 
     // Validate password
@@ -49,23 +72,21 @@ router.post("/register", async (req, res) => {
     }
 
     // Validate phone
-    if (!/^[0-9+() -]{7,20}$/.test(phone.trim())) {
+    const normalizedPhone = phone.trim();
+
+    if (!/^[0-9+() -]{7,20}$/.test(normalizedPhone)) {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid phone number.",
       });
     }
 
-    // Validate semester
-    if (!/^[1-8]$/.test(semester.trim())) {
-      return res.status(400).json({
-        success: false,
-        message: "Please select a semester from 1 to 8.",
-      });
-    }
-
+    // Normalize user information
+    const normalizedName = name.trim();
     const normalizedEmail = email.trim().toLowerCase();
+    const normalizedCollege = college.trim();
     const normalizedUsn = usn.trim().toUpperCase();
+    const normalizedDepartment = department.trim();
 
     // Check duplicate email
     const [existing] = await db.execute(
@@ -96,7 +117,7 @@ router.post("/register", async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Insert student
+    // Insert student into database
     const [result] = await db.execute(
       `INSERT INTO users
         (
@@ -112,14 +133,14 @@ router.post("/register", async (req, res) => {
         )
        VALUES (?, ?, ?, 'student', ?, ?, ?, ?, ?)`,
       [
-        name.trim(),
+        normalizedName,
         normalizedEmail,
         hashedPassword,
-        phone.trim(),
-        college.trim(),
+        normalizedPhone,
+        normalizedCollege,
         normalizedUsn,
-        department.trim(),
-        semester.trim(),
+        normalizedDepartment,
+        semesterNumber,
       ]
     );
 
@@ -128,19 +149,19 @@ router.post("/register", async (req, res) => {
       message: "Student registered successfully.",
       user: {
         id: result.insertId,
-        name: name.trim(),
+        name: normalizedName,
         email: normalizedEmail,
         role: "student",
-        phone: phone.trim(),
-        college: college.trim(),
+        phone: normalizedPhone,
+        college: normalizedCollege,
         usn: normalizedUsn,
-        department: department.trim(),
-        semester: semester.trim(),
+        department: normalizedDepartment,
+        semester: semesterNumber,
       },
     });
 
   } catch (error) {
-    console.error("Registration error:", error.message);
+    console.error("Registration error:", error);
 
     return res.status(500).json({
       success: false,
@@ -149,10 +170,13 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// Login for students and admins
+// ==========================================
+// LOGIN FOR STUDENTS AND ADMINS
+// ==========================================
+
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
     if (
       typeof email !== "string" ||
@@ -192,6 +216,7 @@ router.post("/login", async (req, res) => {
 
     const user = users[0];
 
+    // Compare password
     const passwordMatches = await bcrypt.compare(
       password,
       user.password
@@ -204,6 +229,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // Check JWT configuration
     if (!process.env.JWT_SECRET) {
       console.error("JWT_SECRET is missing.");
 
@@ -213,6 +239,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // Generate token
     const token = jwt.sign(
       {
         id: user.id,
@@ -242,7 +269,7 @@ router.post("/login", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Login error:", error.message);
+    console.error("Login error:", error);
 
     return res.status(500).json({
       success: false,
