@@ -9,7 +9,6 @@ const {
   requireStudent,
 } = require("../middleware/authMiddleware");
 
-// Gmail email transporter
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -18,7 +17,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Escape HTML content
 function escapeHtml(value) {
   return String(value || "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
@@ -29,7 +27,6 @@ function escapeHtml(value) {
   })[char]);
 }
 
-// Format event date
 function formatEventDate(date) {
   if (!date) return "Date to be announced";
 
@@ -47,14 +44,16 @@ function formatEventDate(date) {
   });
 }
 
-// Send event registration confirmation email
+// ==========================================
+// SEND CONFIRMATION EMAIL
+// ==========================================
+
 async function sendEventEmail(student, event) {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     throw new Error("Email configuration is missing.");
   }
 
-  const officialLink =
-    event.registration_url || event.source_url || null;
+  const officialLink = event.registration_url || event.source_url || null;
 
   const safeName = escapeHtml(student.name);
   const safeTitle = escapeHtml(event.title);
@@ -62,9 +61,7 @@ async function sendEventEmail(student, event) {
   const safeLocation = escapeHtml(event.location);
   const safeDate = escapeHtml(formatEventDate(event.event_date));
 
-  const safeLink = officialLink
-    ? escapeHtml(officialLink)
-    : null;
+  const safeLink = officialLink ? escapeHtml(officialLink) : null;
 
   await transporter.sendMail({
     from: `"Event Raider AI" <${process.env.EMAIL_USER}>`,
@@ -74,7 +71,7 @@ async function sendEventEmail(student, event) {
     text: `
 Hello ${student.name},
 
-Your registration interest has been successfully recorded on Event Raider AI.
+Your registration has been successfully recorded on Event Raider AI.
 
 Event Details:
 
@@ -85,38 +82,29 @@ Location: ${event.location || "Not specified"}
 
 ${
   officialLink
-    ? `Complete your official registration here:\n${officialLink}`
-    : "The official registration link is currently unavailable. Please check the college event page."
+    ? `Official Registration Link: ${officialLink}`
+    : "Official registration link is currently unavailable."
 }
-
-Important:
-Your Event Raider registration records your interest.
-You must complete the official registration on the college website.
 
 Regards,
 Event Raider AI Team
     `,
 
     html: `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:25px;color:#263247;background:#ffffff;">
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:25px;color:#263247;">
 
         <div style="background:#101c30;padding:22px;border-radius:12px;text-align:center;">
-          <h1 style="color:#38bdf8;margin:0;">✦ Event Raider AI</h1>
-          <p style="color:#ffffff;margin-bottom:0;">Discover. Connect. Experience.</p>
+          <h1 style="color:#38bdf8;margin:0;">Event Raider AI</h1>
+          <p style="color:white;">Discover. Connect. Experience.</p>
         </div>
 
-        <h2 style="color:#172554;margin-top:28px;">
-          Registration Confirmation!
-        </h2>
+        <h2>Registration Confirmation!</h2>
 
         <p>Hello <strong>${safeName}</strong>,</p>
 
-        <p>
-          Your registration interest has been successfully recorded
-          on Event Raider AI.
-        </p>
+        <p>Your registration has been successfully recorded.</p>
 
-        <h3 style="color:#172554;">Event Details</h3>
+        <h3>Event Details</h3>
 
         <div style="background:#f1f5f9;padding:20px;border-radius:10px;line-height:1.9;">
           <p><strong>Event:</strong> ${safeTitle}</p>
@@ -129,47 +117,22 @@ Event Raider AI Team
           safeLink
             ? `
               <div style="text-align:center;margin:28px 0;">
-                <p style="font-weight:bold;">
-                  Complete your official college registration:
-                </p>
-
-                <a
-                  href="${safeLink}"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style="display:inline-block;background:#0284c7;color:white;text-decoration:none;padding:14px 25px;border-radius:8px;font-weight:bold;"
-                >
-                  Complete Official Registration →
+                <a href="${safeLink}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   style="display:inline-block;background:#0284c7;color:white;text-decoration:none;padding:14px 25px;border-radius:8px;font-weight:bold;">
+                  Official Registration Link
                 </a>
               </div>
             `
-            : `
-              <p style="color:#dc2626;">
-                The official registration link is currently unavailable.
-                Please check the college event page.
-              </p>
-            `
+            : `<p>Official registration link is currently unavailable.</p>`
         }
 
-        <div style="background:#fff7ed;padding:15px;border-radius:8px;">
-          <strong>Important:</strong>
-          <p style="margin-bottom:0;">
-            Your registration on Event Raider AI records your interest.
-            You must complete the official registration on the college
-            website to participate in the event.
-          </p>
-        </div>
+        <p>Thank you for using Event Raider AI!</p>
 
-        <p style="margin-top:30px;">
-          Happy exploring!
-        </p>
+        <p>Regards,<br/><strong>Event Raider AI Team</strong></p>
 
-        <p>
-          Regards,<br/>
-          <strong>Event Raider AI Team</strong>
-        </p>
-
-        <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:25px;"/>
+        <hr/>
 
         <p style="font-size:12px;color:#64748b;text-align:center;">
           © ${new Date().getFullYear()} Event Raider AI
@@ -195,18 +158,16 @@ router.post("/:eventId", authenticateToken, requireStudent, async (req, res) => 
       });
     }
 
-    // Find event
+    // Only check whether the event exists.
     const [events] = await db.execute(
       `SELECT
         id,
         title,
         college,
         event_date,
-        DATE_FORMAT(event_date, '%Y-%m-%d') AS event_day,
         location,
         registration_url,
-        source_url,
-        event_status
+        source_url
        FROM events
        WHERE id = ?`,
       [eventId]
@@ -221,40 +182,9 @@ router.post("/:eventId", authenticateToken, requireStudent, async (req, res) => 
 
     const event = events[0];
 
-    // Validate event status
-    if (
-      String(event.event_status || "").trim().toLowerCase() !== "upcoming"
-    ) {
-      return res.status(409).json({
-        success: false,
-        message: "This event is not available for registration.",
-      });
-    }
+    // No date, expiry, status, URL or location restrictions.
 
-    // Validate event date
-    if (!event.event_day) {
-      return res.status(409).json({
-        success: false,
-        message: "Event date is missing. Please contact the administrator.",
-      });
-    }
-
-    // Check expiry
-    const today = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Kolkata",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-
-    if (event.event_day < today) {
-      return res.status(409).json({
-        success: false,
-        message: "This event has expired.",
-      });
-    }
-
-    // Save registration
+    // Save student registration.
     await db.execute(
       `INSERT INTO event_registrations
         (student_id, event_id)
@@ -266,7 +196,7 @@ router.post("/:eventId", authenticateToken, requireStudent, async (req, res) => 
       `Student ${req.user.id} registered for event ${eventId}`
     );
 
-    // Send confirmation email
+    // Email is optional. Registration succeeds even if email fails.
     let emailSent = false;
     let emailMessage = "";
 
@@ -276,13 +206,8 @@ router.post("/:eventId", authenticateToken, requireStudent, async (req, res) => 
       emailSent = true;
       emailMessage = "Confirmation email sent successfully.";
 
-      console.log(
-        "Event confirmation email sent to:",
-        req.user.email
-      );
-
     } catch (emailError) {
-      emailMessage = "Registration saved, but confirmation email could not be sent.";
+      emailMessage = "Registration successful, but email could not be sent.";
 
       console.error(
         "Event confirmation email failed:",
@@ -292,10 +217,7 @@ router.post("/:eventId", authenticateToken, requireStudent, async (req, res) => 
 
     return res.status(201).json({
       success: true,
-      message: emailSent
-        ? "Registration successful! Check your email for the official registration link."
-        : "Registration saved, but the confirmation email could not be sent.",
-
+      message: "Registration successful!",
       emailSent,
       emailMessage,
 
